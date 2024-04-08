@@ -35,20 +35,18 @@ void x_task(void *p) {
     adc_t data;
     adc_init();
     adc_gpio_init(26);
-    adc_select_input(0);
+    adc_set_round_robin(0b00011);
 
     while (1) {
         data.axis = 0;
         data.val = adc_read();
 
-        // analogic filter from 0-4095 to -255-255 with a central deadzone from -30 to 30
-        int mapped_val = ((data.val * (255 - (-255))) / (4095 - 0)) + (-255);
-        if (mapped_val > -30 && mapped_val < 30) {
-            mapped_val = 0;
-        }
+        // analogic filter from 0-4095 to -255-255
+        int mapped_val = (data.val - 2047) * 255 / 2047;
 
         data.val = mapped_val;
-        xQueueSend(xQueueAdc, &data, portMAX_DELAY);
+        xQueueSend(xQueueAdc, &data, 0);
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -56,20 +54,18 @@ void y_task(void *p) {
     adc_t data;
     adc_init();
     adc_gpio_init(27);
-    adc_select_input(1);
+    adc_set_round_robin(0b00011);
 
     while (1) {
         data.axis = 1;
         data.val = adc_read();
 
-        // analogic filter from 0-4095 to -255-255 with a central deadzone from -30 to 30
-        int mapped_val = ((data.val * (255 - (-255))) / (4095 - 0)) + (-255);
-        if (mapped_val > -30 && mapped_val < 30) {
-            mapped_val = 0;
-        }
+        // analogic filter from 0-4095 to -255-255
+        int mapped_val = -(data.val - 2047) * 255 / 2047;
 
         data.val = mapped_val;
-        xQueueSend(xQueueAdc, &data, portMAX_DELAY);
+        xQueueSend(xQueueAdc, &data, 0);
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -77,8 +73,11 @@ void uart_task(void *p) {
     adc_t data;
 
     while (1) {
-        xQueueReceive(xQueueAdc, &data, portMAX_DELAY);
-        write_package(data);
+        if (xQueueReceive(xQueueAdc, &data, pdMS_TO_TICKS(10))) {
+            if (data.val < -30 || data.val > 30) {
+                write_package(data);
+            }
+        }
     }
 }
 
