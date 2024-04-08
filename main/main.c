@@ -1,6 +1,3 @@
-/*
- * LED blink with FreeRTOS
- */
 #include <FreeRTOS.h>
 #include <queue.h>
 #include <semphr.h>
@@ -13,12 +10,27 @@
 #include <math.h>
 #include <stdlib.h>
 
+#define MOVING_AVERAGE_SIZE 10
+#define SENSITIVITY_SCALE 0.5
+
 QueueHandle_t xQueueAdc;
 
 typedef struct adc {
     int axis;
     int val;
 } adc_t;
+
+int moving_average(int new_sample, int samples[], int *sample_index) {
+    samples[*sample_index] = new_sample;
+    *sample_index = (*sample_index + 1) % MOVING_AVERAGE_SIZE;
+
+    int sum = 0;
+    for (int i = 0; i < MOVING_AVERAGE_SIZE; i++) {
+        sum += samples[i];
+    }
+
+    return (int)(sum / MOVING_AVERAGE_SIZE);
+}
 
 void write_package(adc_t data) {
     int val = data.val;
@@ -33,6 +45,9 @@ void write_package(adc_t data) {
 
 void x_task(void *p) {
     adc_t data;
+    int samples[MOVING_AVERAGE_SIZE] = {0};
+    int sample_index = 0;
+
     adc_init();
     adc_gpio_init(26);
     adc_set_round_robin(0b00011);
@@ -43,8 +58,9 @@ void x_task(void *p) {
 
         // analogic filter from 0-4095 to -255-255
         int mapped_val = (data.val - 2047) * 255 / 2047;
+        int averaged_val = moving_average(mapped_val, samples, &sample_index);
 
-        data.val = mapped_val;
+        data.val = (int)(averaged_val * SENSITIVITY_SCALE);
         xQueueSend(xQueueAdc, &data, 0);
         vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -52,6 +68,9 @@ void x_task(void *p) {
 
 void y_task(void *p) {
     adc_t data;
+    int samples[MOVING_AVERAGE_SIZE] = {0};
+    int sample_index = 0;
+
     adc_init();
     adc_gpio_init(27);
     adc_set_round_robin(0b00011);
@@ -62,8 +81,9 @@ void y_task(void *p) {
 
         // analogic filter from 0-4095 to -255-255
         int mapped_val = -(data.val - 2047) * 255 / 2047;
+        int averaged_val = moving_average(mapped_val, samples, &sample_index);
 
-        data.val = mapped_val;
+        data.val = (int)(averaged_val * SENSITIVITY_SCALE);
         xQueueSend(xQueueAdc, &data, 0);
         vTaskDelay(pdMS_TO_TICKS(100));
     }
